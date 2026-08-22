@@ -1,4 +1,4 @@
-﻿# Windhawk Mod 介绍自动翻译 - 安装 / 更新脚本
+# Windhawk Mod 介绍自动翻译 - 安装 / 更新脚本
 # =====================================================
 # 功能：
 #   1. 复制 translate.js 到 Windhawk UI 的 webview 目录
@@ -59,15 +59,19 @@ if ($t.Contains('translate.js')) {
     Write-Host '[2/3] index.html 注入完成' -ForegroundColor Green
 }
 
-# ---- 3. 修改 extension.js 的 CSP（幂等） ----
+# ---- 3. 修改 extension.js 的 CSP（幂等；https: 通配支持任意 AI API 域名） ----
 $t2 = [System.IO.File]::ReadAllText($extJs)
-$old = 'connect-src ${a.cspSource} https://mods.windhawk.net https://ramensoftware.com'
-$extra = 'https://translate.googleapis.com https://cn.bing.com https://www.bing.com https://edge.microsoft.com https://api-edge.cognitive.microsofttranslator.com https://api.mymemory.translated.net'
-$new = 'connect-src ${a.cspSource} https://mods.windhawk.net https://ramensoftware.com ' + $extra
-if ($t2.Contains($extra)) {
-    Write-Host '[3/3] extension.js CSP 已包含翻译域名，跳过' -ForegroundColor Gray
-} elseif ($t2.Contains($old)) {
-    $t2 = $t2.Replace($old, $new)
+$oldCsp = 'connect-src ${a.cspSource} https://mods.windhawk.net https://ramensoftware.com'
+$oldList = ' https://translate.googleapis.com https://cn.bing.com https://www.bing.com https://edge.microsoft.com https://api-edge.cognitive.microsofttranslator.com https://api.mymemory.translated.net'
+$newCsp = $oldCsp + ' https:'
+if ($t2.Contains($newCsp)) {
+    Write-Host '[3/3] extension.js CSP 已放行翻译域名，跳过' -ForegroundColor Gray
+} elseif ($t2.Contains($oldCsp + $oldList)) {
+    $t2 = $t2.Replace($oldCsp + $oldList, $newCsp)
+    [System.IO.File]::WriteAllText($extJs, $t2)
+    Write-Host '[3/3] extension.js CSP 已更新（收拢为 https:）' -ForegroundColor Green
+} elseif ($t2.Contains($oldCsp)) {
+    $t2 = $t2.Replace($oldCsp, $newCsp)
     [System.IO.File]::WriteAllText($extJs, $t2)
     Write-Host '[3/3] extension.js CSP 修改完成' -ForegroundColor Green
 } else {
