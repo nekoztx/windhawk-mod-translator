@@ -13,8 +13,12 @@
 ## ✨ 功能
 
 - **Mod 详情页长篇介绍（README）自动翻译成中文**，打开即译
-- Mod 卡片/详情页的英文短描述也会翻译（官方多语言目录未覆盖的部分）
-- **翻译质量优先**：Google 翻译 → Bing 翻译 → MyMemory 自动降级，全部不可用时保持原文，绝不影响 Windhawk 原有功能
+- Mod 卡片/详情页的英文短描述与名称标题也会翻译（官方多语言目录未覆盖的部分）
+- **可切换翻译后端**（右下角 ⚙ 设置）：
+  - 自动 / Google 翻译 / Bing 翻译 / MyMemory（免费，无需配置）
+  - **百度翻译**（免费申请 AppID，每月 5 万字符）
+  - **AI API**（OpenAI 兼容接口：DeepSeek / OpenAI / 通义千问 / Kimi 等，支持批量翻译，质量最好）
+- 后端失败自动降级，全部不可用时保持原文，绝不影响 Windhawk 原有功能
 - **本地缓存**：翻过一次的内容不再重复请求
 - **一键开关**：详情页右下角 `🌐 译` 按钮，随时开关（记住上次状态）
 - 智能跳过：代码块、版本号、作者名、链接、已含中文的文本不翻译
@@ -26,6 +30,18 @@
 2. **双击运行**（会请求管理员权限，因为要修改 `C:\Program Files\Windhawk` 下的文件）
 3. 看到"安装完成"后，**完全退出 Windhawk**（托盘图标右键 → Exit）
 4. 重新打开 Windhawk → 进入任意 Mod 的**"详 情"页** → 英文介绍几秒内自动变成中文 🎉
+
+### ⚙️ 切换翻译后端 / 配置 AI API
+
+点击详情页右下角的 **⚙** 按钮打开翻译设置：
+
+- 选择翻译后端（自动 / Google / Bing / MyMemory / 百度翻译 / AI API）
+- 选择**百度翻译**时填写百度翻译开放平台申请的 AppID 和密钥
+- 选择 **AI API** 时填写：
+  - **Base URL**：OpenAI 兼容接口地址，如 `https://api.deepseek.com/v1`（DeepSeek）、`https://api.openai.com/v1`（OpenAI）、`https://dashscope.aliyuncs.com/compatible-mode/v1`（通义千问）、`https://api.moonshot.cn/v1`（Kimi）
+  - **API Key**：对应平台的密钥
+  - **模型**：如 `deepseek-chat`、`gpt-4o-mini`、`qwen-turbo`、`moonshot-v1-8k`
+- 设置保存在本机（localStorage），API Key 不会上传到任何服务器
 
 ### 效果示例
 
