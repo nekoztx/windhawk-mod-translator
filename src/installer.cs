@@ -79,14 +79,20 @@ class Installer
                 msgs.AppendLine("[OK] index.html 注入完成");
             }
 
-            // 4. 修改 extension.js 的 CSP 放行翻译 API 域名（幂等）
+            // 4. 修改 extension.js 的 CSP 放行翻译 API 域名（幂等；https: 通配支持任意 AI API 域名）
             string ext = File.ReadAllText(extJs);
             string oldCsp = "connect-src ${a.cspSource} https://mods.windhawk.net https://ramensoftware.com";
-            string extra = "https://translate.googleapis.com https://cn.bing.com https://www.bing.com https://edge.microsoft.com https://api-edge.cognitive.microsofttranslator.com https://api.mymemory.translated.net";
-            string newCsp = "connect-src ${a.cspSource} https://mods.windhawk.net https://ramensoftware.com " + extra;
-            if (ext.Contains(extra))
+            string oldList = " https://translate.googleapis.com https://cn.bing.com https://www.bing.com https://edge.microsoft.com https://api-edge.cognitive.microsofttranslator.com https://api.mymemory.translated.net";
+            string newCsp = oldCsp + " https:";
+            if (ext.Contains(newCsp))
             {
-                msgs.AppendLine("[--] extension.js CSP 已包含翻译域名，跳过");
+                msgs.AppendLine("[--] extension.js CSP 已放行翻译域名，跳过");
+            }
+            else if (ext.Contains(oldCsp + oldList))
+            {
+                ext = ext.Replace(oldCsp + oldList, newCsp);
+                File.WriteAllText(extJs, ext);
+                msgs.AppendLine("[OK] extension.js CSP 已更新（收拢为 https:）");
             }
             else if (ext.Contains(oldCsp))
             {
