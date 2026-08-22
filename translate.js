@@ -20,6 +20,8 @@
 
   var README_SELECTOR = '[class*="ReactMarkdownCustom__ReactMarkdownStyleWrapper"]';
   var DESC_SELECTOR = '[class*="ant-card-meta-description"]';
+  // 详情页/卡片的 mod 名称标题（元数据无中文时保持英文，需要翻译）
+  var TITLE_SELECTOR = '[class*="ModDetailsHeader__CardTitleFirstLine"], [class*="ModCard__ModCardTitle"]';
   var UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36 Edg/126.0.0.0';
 
   // ==================== 工具 ====================
@@ -289,11 +291,18 @@
 
   function scan() {
     if (busy || !isEnabled()) return;
-    var targets = document.querySelectorAll(README_SELECTOR);
     var items = [];
+    // 1) README 长文介绍容器
+    var targets = document.querySelectorAll(README_SELECTOR);
     for (var i = 0; i < targets.length; i++) {
       items = items.concat(collectReadmeTexts(targets[i]));
     }
+    // 2) mod 名称标题（详情页标题栏 / 卡片标题）
+    var titles = document.querySelectorAll(TITLE_SELECTOR);
+    for (var j = 0; j < titles.length; j++) {
+      items = items.concat(collectReadmeTexts(titles[j]));
+    }
+    // 3) 卡片/详情短描述
     items = items.concat(collectDescs(document));
     if (!items.length) return;
     var texts = [];
