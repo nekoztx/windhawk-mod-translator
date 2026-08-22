@@ -17,6 +17,38 @@
   var MAX_CONCURRENCY = 4;              // 同时请求数
   var CACHE_KEY = 'wh-translate-cache-v2';       // v2: 校验缓存有效性
   var SETTING_KEY = 'wh-translate-enabled';
+  var CFG_KEY = 'wh-translate-config-v1';        // 翻译设置（后端选择 + API 配置）
+
+  // 默认设置
+  var DEFAULT_CONFIG = {
+    backend: 'auto',        // auto | google | bing | mymemory | baidu | ai
+    baidu: { appid: '', key: '' },
+    ai: { baseUrl: 'https://api.deepseek.com/v1', apiKey: '', model: 'deepseek-chat' },
+  };
+
+  var settings = loadConfig();
+
+  function loadConfig() {
+    var cfg = {};
+    try { cfg = JSON.parse(localStorage.getItem(CFG_KEY) || '{}') || {}; } catch (e) { cfg = {}; }
+    // 合并默认值
+    return {
+      backend: cfg.backend || DEFAULT_CONFIG.backend,
+      baidu: {
+        appid: (cfg.baidu && cfg.baidu.appid) || DEFAULT_CONFIG.baidu.appid,
+        key: (cfg.baidu && cfg.baidu.key) || DEFAULT_CONFIG.baidu.key,
+      },
+      ai: {
+        baseUrl: (cfg.ai && cfg.ai.baseUrl) || DEFAULT_CONFIG.ai.baseUrl,
+        apiKey: (cfg.ai && cfg.ai.apiKey) || DEFAULT_CONFIG.ai.apiKey,
+        model: (cfg.ai && cfg.ai.model) || DEFAULT_CONFIG.ai.model,
+      },
+    };
+  }
+
+  function saveConfig() {
+    try { localStorage.setItem(CFG_KEY, JSON.stringify(settings)); } catch (e) { /* ignore */ }
+  }
 
   var README_SELECTOR = '[class*="ReactMarkdownCustom__ReactMarkdownStyleWrapper"]';
   var DESC_SELECTOR = '[class*="ant-card-meta-description"]';
@@ -73,8 +105,7 @@
   }
 
   // ==================== 翻译后端 ====================
-  var backendOrder = ['google', 'bing', 'mymemory']; // 按顺序尝试
-  var backendState = {}; // google/bing/mymemory: 'ok' | 'bad'
+  var backendState = {}; // google/bing/mymemory/baidu/ai: 'ok' | 'bad'
 
   function markBackend(name, ok) {
     backendState[name] = ok ? 'ok' : 'bad';
@@ -139,6 +170,107 @@
     return t;
   }
 
+  // ---- MD5（百度翻译签名用，标准实现） ----
+  var md5 = (function () {
+    function safeAdd(x, y) { var lsw = (x & 0xffff) + (y & 0xffff), msw = (x >> 16) + (y >> 16) + (lsw >> 16); return (msw << 16) | (lsw & 0xffff); }
+    function bitRotateLeft(num, cnt) { return (num << cnt) | (num >>> (32 - cnt)); }
+    function md5cmn(q, a, b, x, s, t) { return safeAdd(bitRotateLeft(safeAdd(safeAdd(a, q), safeAdd(x, t)), s), b); }
+    function md5ff(a, b, c, d, x, s, t) { return md5cmn((b & c) | (~b & d), a, b, x, s, t); }
+    function md5gg(a, b, c, d, x, s, t) { return md5cmn((b & d) | (c & ~d), a, b, x, s, t); }
+    function md5hh(a, b, c, d, x, s, t) { return md5cmn(b ^ c ^ d, a, b, x, s, t); }
+    function md5ii(a, b, c, d, x, s, t) { return md5cmn(c ^ (b | ~d), a, b, x, s, t); }
+    function binlMD5(x, len) {
+      x[len >> 5] |= 0x80 << (len % 32); x[(((len + 64) >>> 9) << 4) + 14] = len;
+      var a = 1732584193, b = -271733879, c = -1732584194, d = 271733878;
+      for (var i = 0; i < x.length; i += 16) {
+        var olda = a, oldb = b, oldc = c, oldd = d;
+        a = md5ff(a, b, c, d, x[i], 7, -680876936); d = md5ff(d, a, b, c, x[i + 1], 12, -389564586); c = md5ff(c, d, a, b, x[i + 2], 17, 606105819); b = md5ff(b, c, d, a, x[i + 3], 22, -1044525330);
+        a = md5ff(a, b, c, d, x[i + 4], 7, -176418897); d = md5ff(d, a, b, c, x[i + 5], 12, 1200080426); c = md5ff(c, d, a, b, x[i + 6], 17, -1473231341); b = md5ff(b, c, d, a, x[i + 7], 22, -45705983);
+        a = md5ff(a, b, c, d, x[i + 8], 7, 1770035416); d = md5ff(d, a, b, c, x[i + 9], 12, -1958414417); c = md5ff(c, d, a, b, x[i + 10], 17, -42063); b = md5ff(b, c, d, a, x[i + 11], 22, -1990404162);
+        a = md5ff(a, b, c, d, x[i + 12], 7, 1804603682); d = md5ff(d, a, b, c, x[i + 13], 12, -40341101); c = md5ff(c, d, a, b, x[i + 14], 17, -1502002290); b = md5ff(b, c, d, a, x[i + 15], 22, 1236535329);
+        a = md5gg(a, b, c, d, x[i + 1], 5, -165796510); d = md5gg(d, a, b, c, x[i + 6], 9, -1069501632); c = md5gg(c, d, a, b, x[i + 11], 14, 643717713); b = md5gg(b, c, d, a, x[i], 20, -373897302);
+        a = md5gg(a, b, c, d, x[i + 5], 5, -701558691); d = md5gg(d, a, b, c, x[i + 10], 9, 38016083); c = md5gg(c, d, a, b, x[i + 15], 14, -660478335); b = md5gg(b, c, d, a, x[i + 4], 20, -405537848);
+        a = md5gg(a, b, c, d, x[i + 9], 5, 568446438); d = md5gg(d, a, b, c, x[i + 14], 9, -1019803690); c = md5gg(c, d, a, b, x[i + 3], 14, -187363961); b = md5gg(b, c, d, a, x[i + 8], 20, 1163531501);
+        a = md5gg(a, b, c, d, x[i + 13], 5, -1444681467); d = md5gg(d, a, b, c, x[i + 2], 9, -51403784); c = md5gg(c, d, a, b, x[i + 7], 14, 1735328473); b = md5gg(b, c, d, a, x[i + 12], 20, -1926607734);
+        a = md5hh(a, b, c, d, x[i + 5], 4, -378558); d = md5hh(d, a, b, c, x[i + 8], 11, -2022574463); c = md5hh(c, d, a, b, x[i + 11], 16, 1839030562); b = md5hh(b, c, d, a, x[i + 14], 23, -35309556);
+        a = md5hh(a, b, c, d, x[i + 1], 4, -1530992060); d = md5hh(d, a, b, c, x[i + 4], 11, 1272893353); c = md5hh(c, d, a, b, x[i + 7], 16, -155497632); b = md5hh(b, c, d, a, x[i + 10], 23, -1094730640);
+        a = md5hh(a, b, c, d, x[i + 13], 4, 681279174); d = md5hh(d, a, b, c, x[i], 11, -358537222); c = md5hh(c, d, a, b, x[i + 3], 16, -722521979); b = md5hh(b, c, d, a, x[i + 6], 23, 76029189);
+        a = md5hh(a, b, c, d, x[i + 9], 4, -640364487); d = md5hh(d, a, b, c, x[i + 12], 11, -421815835); c = md5hh(c, d, a, b, x[i + 15], 16, 530742520); b = md5hh(b, c, d, a, x[i + 2], 23, -995338651);
+        a = md5ii(a, b, c, d, x[i], 6, -198630844); d = md5ii(d, a, b, c, x[i + 7], 10, 1126891415); c = md5ii(c, d, a, b, x[i + 14], 15, -1416354905); b = md5ii(b, c, d, a, x[i + 5], 21, -57434055);
+        a = md5ii(a, b, c, d, x[i + 12], 6, 1700485571); d = md5ii(d, a, b, c, x[i + 3], 10, -1894986606); c = md5ii(c, d, a, b, x[i + 10], 15, -1051523); b = md5ii(b, c, d, a, x[i + 1], 21, -2054922799);
+        a = md5ii(a, b, c, d, x[i + 8], 6, 1873313359); d = md5ii(d, a, b, c, x[i + 15], 10, -30611744); c = md5ii(c, d, a, b, x[i + 6], 15, -1560198380); b = md5ii(b, c, d, a, x[i + 13], 21, 1309151649);
+        a = md5ii(a, b, c, d, x[i + 4], 6, -145523070); d = md5ii(d, a, b, c, x[i + 11], 10, -1120210379); c = md5ii(c, d, a, b, x[i + 2], 15, 718787259); b = md5ii(b, c, d, a, x[i + 9], 21, -343485551);
+        a = safeAdd(a, olda); b = safeAdd(b, oldb); c = safeAdd(c, oldc); d = safeAdd(d, oldd);
+      }
+      return [a, b, c, d];
+    }
+    function binl2hex(binarray) {
+      var hexTab = '0123456789abcdef', str = '';
+      for (var i = 0; i < binarray.length * 4; i++) {
+        str += hexTab.charAt((binarray[i >> 2] >> ((i % 4) * 8 + 4)) & 0xf) + hexTab.charAt((binarray[i >> 2] >> ((i % 4) * 8)) & 0xf);
+      }
+      return str;
+    }
+    function str2binl(str) {
+      var bin = [], mask = (1 << 8) - 1;
+      for (var i = 0; i < str.length * 8; i += 8) bin[i >> 5] |= (str.charCodeAt(i / 8) & mask) << (i % 32);
+      return bin;
+    }
+    function utf8Encode(str) {
+      return unescape(encodeURIComponent(str)); // 标准 utf8 字节序列
+    }
+    return function (s) {
+      var bytes = utf8Encode(s);
+      return binl2hex(binlMD5(str2binl(bytes), bytes.length * 8));
+    };
+  })();
+
+  /** 百度翻译（免费额度，需 appid+key，MD5 签名） */
+  async function translateBaidu(text) {
+    var cfg = settings.baidu;
+    var salt = String(Date.now() + Math.floor(Math.random() * 1000));
+    var sign = md5(cfg.appid + text + salt + cfg.key);
+    var url = 'https://fanyi-api.baidu.com/api/trans/vip/translate?q=' + encodeURIComponent(text) +
+      '&from=auto&to=zh&appid=' + encodeURIComponent(cfg.appid) + '&salt=' + salt + '&sign=' + sign;
+    var r = await fetchWithTimeout(url);
+    if (!r.ok) throw new Error('baidu ' + r.status);
+    var j = await r.json();
+    if (j.error_code) throw new Error('baidu ' + j.error_code);
+    var t = j.trans_result && j.trans_result[0] && j.trans_result[0].dst;
+    if (!t) throw new Error('baidu empty');
+    return t;
+  }
+
+  /** AI API（OpenAI 兼容接口，批量翻译，一次请求翻译多段） */
+  async function translateAI(texts) {
+    var cfg = settings.ai;
+    var url = cfg.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+    var system = 'You are a professional translator. Translate each text from English to Simplified Chinese (zh-CN). ' +
+      'Return ONLY a JSON array of translated strings, with the same length and order as the input array. ' +
+      'Do not add explanations or markdown. Keep technical terms reasonably translated or as-is when appropriate.';
+    var r = await fetchWithTimeout(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.apiKey },
+      body: JSON.stringify({
+        model: cfg.model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: JSON.stringify(texts) },
+        ],
+        temperature: 0.3,
+      }),
+    }, 60000);
+    if (!r.ok) throw new Error('ai ' + r.status);
+    var j = await r.json();
+    var content = j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content;
+    if (!content) throw new Error('ai empty');
+    content = String(content).trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    var arr;
+    try { arr = JSON.parse(content); } catch (e) { throw new Error('ai bad json'); }
+    if (!Array.isArray(arr) || arr.length !== texts.length) throw new Error('ai bad shape');
+    return arr.map(function (x, i) { return typeof x === 'string' ? x : String(x); });
+  }
+
   /** 判断译文是否有效（翻译成中文必须含汉字，防止错误响应/原文回显被应用） */
   function isGoodTranslation(tr, orig) {
     if (!tr || !tr.trim()) return false;
@@ -171,7 +303,18 @@
     return results;
   }
 
-  /** 翻译一批文本；返回 Map<原文本, 译文>，失败的后端降级 */
+  /** 根据设置返回后端尝试顺序 */
+  function backendOrder() {
+    var b = settings.backend;
+    if (b === 'google') return ['google', 'bing', 'mymemory'];
+    if (b === 'bing') return ['bing', 'google', 'mymemory'];
+    if (b === 'mymemory') return ['mymemory', 'google', 'bing'];
+    if (b === 'baidu') return ['baidu', 'google', 'bing', 'mymemory'];
+    if (b === 'ai') return ['ai', 'google', 'bing', 'mymemory'];
+    return ['google', 'bing', 'mymemory']; // auto
+  }
+
+  /** 翻译一批文本；按设置的顺序尝试后端，失败自动降级；返回 Map<原文本, 译文> */
   async function translateBatch(texts) {
     var results = {};
     // 先填缓存
@@ -179,48 +322,50 @@
       var cv = getCached(texts[ci]);
       if (cv) results[texts[ci]] = cv;
     }
-    var need = texts.filter(function (x) { return results[x] === undefined; });
-    if (!need.length) return results;
-
-    // 后端1: Google（并发，连续3条失败则快速放弃）
-    if (backendState['google'] !== 'bad') {
-      var googleOut = [];
+    var order = backendOrder();
+    for (var bi = 0; bi < order.length; bi++) {
+      var name = order[bi];
+      var rest = texts.filter(function (x) { return results[x] === undefined; });
+      if (!rest.length) break;
+      if (backendState[name] === 'bad') continue;
+      // 需要配置的后端：未配置则跳过（不标记失败）
+      if (name === 'baidu' && (!settings.baidu.appid || !settings.baidu.key)) continue;
+      if (name === 'ai' && (!settings.ai.apiKey || !settings.ai.baseUrl)) continue;
       try {
-        googleOut = await mapWithConcurrency(need, MAX_CONCURRENCY, function (t) {
-          var c = getCached(t);
-          return c ? Promise.resolve(c) : translateGoogle(t);
-        }, 3);
-      } catch (e) {
-        markBackend('google', false);
-      }
-      var googleFails = 0;
-      for (var i = 0; i < need.length; i++) {
-        if (googleOut[i] === null) googleFails++;
-        else if (isGoodTranslation(googleOut[i], need[i])) { results[need[i]] = googleOut[i]; setCached(need[i], googleOut[i]); }
-      }
-      if (googleFails > need.length / 2) markBackend('google', false);
-    }
-
-    var rest = texts.filter(function (x) { return results[x] === undefined; });
-    if (rest.length) {
-      try {
-        var arr = await translateBing(rest);
-        for (var j = 0; j < rest.length; j++) {
-          if (isGoodTranslation(arr[j], rest[j])) {
-            results[rest[j]] = arr[j];
-            setCached(rest[j], arr[j]);
+        if (name === 'google') {
+          var gOut = await mapWithConcurrency(rest, MAX_CONCURRENCY, function (t) {
+            var c = getCached(t);
+            return c ? Promise.resolve(c) : translateGoogle(t);
+          }, 3);
+          var gFails = 0;
+          for (var i = 0; i < rest.length; i++) {
+            if (gOut[i] === null) gFails++;
+            else if (isGoodTranslation(gOut[i], rest[i])) { results[rest[i]] = gOut[i]; setCached(rest[i], gOut[i]); }
+          }
+          if (gFails > rest.length / 2) markBackend('google', false);
+        } else if (name === 'bing') {
+          var arr = await translateBing(rest);
+          for (var j = 0; j < rest.length; j++) {
+            if (isGoodTranslation(arr[j], rest[j])) { results[rest[j]] = arr[j]; setCached(rest[j], arr[j]); }
+          }
+        } else if (name === 'mymemory') {
+          var mmOut = await mapWithConcurrency(rest, 2, translateMyMemory);
+          for (var k = 0; k < rest.length; k++) {
+            if (isGoodTranslation(mmOut[k], rest[k])) { results[rest[k]] = mmOut[k]; setCached(rest[k], mmOut[k]); }
+          }
+        } else if (name === 'baidu') {
+          var bdOut = await mapWithConcurrency(rest, 3, translateBaidu);
+          for (var l = 0; l < rest.length; l++) {
+            if (isGoodTranslation(bdOut[l], rest[l])) { results[rest[l]] = bdOut[l]; setCached(rest[l], bdOut[l]); }
+          }
+        } else if (name === 'ai') {
+          var aiOut = await translateAI(rest);
+          for (var m = 0; m < rest.length; m++) {
+            if (isGoodTranslation(aiOut[m], rest[m])) { results[rest[m]] = aiOut[m]; setCached(rest[m], aiOut[m]); }
           }
         }
       } catch (e) {
-        markBackend('bing', false);
-      }
-    }
-
-    rest = texts.filter(function (x) { return results[x] === undefined; });
-    if (rest.length) {
-      var mmOut = await mapWithConcurrency(rest, 2, translateMyMemory);
-      for (var k = 0; k < rest.length; k++) {
-        if (isGoodTranslation(mmOut[k], rest[k])) { results[rest[k]] = mmOut[k]; setCached(rest[k], mmOut[k]); }
+        markBackend(name, false);
       }
     }
     return results;
@@ -311,10 +456,14 @@
       if (!seen[items[j].text]) { seen[items[j].text] = 1; texts.push(items[j].text); }
     }
     busy = true;
-    translateBatch(texts)
-      .then(function (results) { applyResults(items, results); })
-      .catch(function () { /* 静默 */ })
-      .finally(function () { busy = false; });
+    try {
+      translateBatch(texts)
+        .then(function (results) { applyResults(items, results); })
+        .catch(function () { /* 静默 */ })
+        .finally(function () { busy = false; });
+    } catch (e) {
+      busy = false;
+    }
   }
 
   function scheduleScan() {
@@ -322,7 +471,7 @@
     scanTimer = setTimeout(scan, 900);
   }
 
-  // ==================== 开关 ====================
+  // ==================== 开关 & 设置 ====================
   function isEnabled() {
     var v = null;
     try { v = localStorage.getItem(SETTING_KEY); } catch (e) { /* ignore */ }
@@ -330,35 +479,131 @@
   }
 
   var toggleBtn = null;
+  var settingsBtn = null;
+
+  function inputStyle() {
+    return 'width:100%;box-sizing:border-box;background:#333;border:1px solid #454545;border-radius:4px;' +
+      'color:#ddd;padding:6px 8px;margin:4px 0;font:13px "Segoe UI","Microsoft YaHei",sans-serif;outline:none;';
+  }
+
+  function ensureSettingsPanel() {
+    var panel = document.getElementById('wh-settings-panel');
+    if (panel && panel.isConnected) return panel;
+
+    panel = document.createElement('div');
+    panel.id = 'wh-settings-panel';
+    panel.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.45);display:none;';
+    panel.innerHTML =
+      '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;max-width:92vw;' +
+      'background:#252526;border:1px solid #454545;border-radius:10px;padding:16px 18px;color:#ddd;' +
+      'font:13px/1.7 "Segoe UI","Microsoft YaHei",sans-serif;box-shadow:0 8px 32px rgba(0,0,0,.6);">' +
+      '<div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:10px;">⚙ 翻译设置</div>' +
+      '<div style="color:#aaa;margin:6px 0 4px;">翻译后端</div>' +
+      '<label style="display:block;padding:2px 0;"><input type="radio" name="wh-backend" value="auto"> 自动（Google → Bing → MyMemory）</label>' +
+      '<label style="display:block;padding:2px 0;"><input type="radio" name="wh-backend" value="google"> Google 翻译</label>' +
+      '<label style="display:block;padding:2px 0;"><input type="radio" name="wh-backend" value="bing"> Bing 翻译</label>' +
+      '<label style="display:block;padding:2px 0;"><input type="radio" name="wh-backend" value="mymemory"> MyMemory</label>' +
+      '<label style="display:block;padding:2px 0;"><input type="radio" name="wh-backend" value="baidu"> 百度翻译（需 AppID + 密钥）</label>' +
+      '<label style="display:block;padding:2px 0;"><input type="radio" name="wh-backend" value="ai"> AI API（OpenAI 兼容）</label>' +
+      '<div id="wh-cfg-baidu" style="display:none;margin-top:8px;background:#1e1e1e;padding:8px 10px;border-radius:6px;">' +
+      '<div style="color:#aaa;">百度翻译 API（fanyi-api.baidu.com 免费申请，每月 5 万字符）</div>' +
+      '<input id="wh-baidu-appid" placeholder="AppID" style="' + inputStyle() + '">' +
+      '<input id="wh-baidu-key" placeholder="密钥 Key" style="' + inputStyle() + '">' +
+      '</div>' +
+      '<div id="wh-cfg-ai" style="display:none;margin-top:8px;background:#1e1e1e;padding:8px 10px;border-radius:6px;">' +
+      '<div style="color:#aaa;">OpenAI 兼容接口：DeepSeek / OpenAI / 通义千问 / Kimi 等</div>' +
+      '<input id="wh-ai-base" placeholder="Base URL，如 https://api.deepseek.com/v1" style="' + inputStyle() + '">' +
+      '<input id="wh-ai-key" type="password" placeholder="API Key" style="' + inputStyle() + '">' +
+      '<input id="wh-ai-model" placeholder="模型，如 deepseek-chat / gpt-4o-mini / qwen-turbo" style="' + inputStyle() + '">' +
+      '</div>' +
+      '<div style="margin-top:14px;text-align:right;">' +
+      '<button id="wh-cfg-cancel" style="background:#3a3a3a;color:#ccc;border:1px solid #555;border-radius:5px;padding:5px 16px;margin-right:8px;cursor:pointer;font-size:13px;">取消</button>' +
+      '<button id="wh-cfg-save" style="background:#0a84ff;color:#fff;border:none;border-radius:5px;padding:5px 16px;cursor:pointer;font-size:13px;">保存</button>' +
+      '</div>' +
+      '<div style="margin-top:8px;color:#888;font-size:11px;">API Key 仅保存在本机（localStorage），不会上传到任何服务器。</div>' +
+      '</div>';
+    document.body.appendChild(panel);
+
+    // 后端选择切换时显示对应配置区
+    panel.addEventListener('change', function (e) {
+      if (e.target && e.target.name === 'wh-backend') {
+        var v = e.target.value;
+        panel.querySelector('#wh-cfg-baidu').style.display = v === 'baidu' ? 'block' : 'none';
+        panel.querySelector('#wh-cfg-ai').style.display = v === 'ai' ? 'block' : 'none';
+      }
+    });
+    panel.querySelector('#wh-cfg-cancel').onclick = function () { panel.style.display = 'none'; };
+    panel.querySelector('#wh-cfg-save').onclick = function () {
+      var sel = panel.querySelector('input[name="wh-backend"]:checked');
+      if (sel) settings.backend = sel.value;
+      settings.baidu.appid = panel.querySelector('#wh-baidu-appid').value.trim();
+      settings.baidu.key = panel.querySelector('#wh-baidu-key').value.trim();
+      settings.ai.baseUrl = panel.querySelector('#wh-ai-base').value.trim() || DEFAULT_CONFIG.ai.baseUrl;
+      settings.ai.apiKey = panel.querySelector('#wh-ai-key').value.trim();
+      settings.ai.model = panel.querySelector('#wh-ai-model').value.trim() || DEFAULT_CONFIG.ai.model;
+      saveConfig();
+      panel.style.display = 'none';
+      // 重置后端运行状态并立即重新翻译
+      backendState = {};
+      scheduleScan();
+    };
+    return panel;
+  }
+
+  function openSettings() {
+    var panel = ensureSettingsPanel();
+    // 填入当前设置
+    var radios = panel.querySelectorAll('input[name="wh-backend"]');
+    for (var i = 0; i < radios.length; i++) radios[i].checked = radios[i].value === settings.backend;
+    panel.querySelector('#wh-baidu-appid').value = settings.baidu.appid;
+    panel.querySelector('#wh-baidu-key').value = settings.baidu.key;
+    panel.querySelector('#wh-ai-base').value = settings.ai.baseUrl;
+    panel.querySelector('#wh-ai-key').value = settings.ai.apiKey;
+    panel.querySelector('#wh-ai-model').value = settings.ai.model;
+    panel.querySelector('#wh-cfg-baidu').style.display = settings.backend === 'baidu' ? 'block' : 'none';
+    panel.querySelector('#wh-cfg-ai').style.display = settings.backend === 'ai' ? 'block' : 'none';
+    panel.style.display = 'block';
+  }
+
   function ensureToggleButton() {
-    if (toggleBtn && toggleBtn.isConnected) return;
+    if (toggleBtn && toggleBtn.isConnected && settingsBtn && settingsBtn.isConnected) return;
+    var holder = document.createElement('div');
+    holder.id = 'wh-toggle-holder';
+    holder.style.cssText =
+      'position:fixed;right:14px;bottom:14px;z-index:2147483646;display:flex;gap:6px;' +
+      'font-family:"Segoe UI","Microsoft YaHei",sans-serif;';
     toggleBtn = document.createElement('button');
     toggleBtn.id = 'wh-translate-toggle';
     toggleBtn.textContent = '🌐 译';
     toggleBtn.title = 'Mod 介绍自动翻译（点击开关）';
     toggleBtn.style.cssText =
-      'position:fixed;right:14px;bottom:14px;z-index:2147483646;' +
       'background:rgba(0,120,212,.92);color:#fff;border:none;border-radius:14px;' +
-      'padding:5px 12px;font-size:12px;font-family:Segoe UI,Microsoft YaHei,sans-serif;' +
-      'cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);opacity:.55;' +
+      'padding:5px 12px;font-size:12px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);opacity:.55;' +
       'transition:opacity .2s;';
-    toggleBtn.onmouseenter = function () { toggleBtn.style.opacity = '1'; };
-    toggleBtn.onmouseleave = function () { toggleBtn.style.opacity = '.55'; };
+    settingsBtn = document.createElement('button');
+    settingsBtn.id = 'wh-settings-toggle';
+    settingsBtn.textContent = '⚙';
+    settingsBtn.title = '翻译设置（选择后端 / 配置 AI API）';
+    settingsBtn.style.cssText =
+      'background:rgba(80,80,80,.92);color:#fff;border:none;border-radius:14px;' +
+      'padding:5px 10px;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.35);opacity:.55;' +
+      'transition:opacity .2s;';
+    var dim = function (b) {
+      b.onmouseenter = function () { b.style.opacity = '1'; };
+      b.onmouseleave = function () { b.style.opacity = '.55'; };
+    };
+    dim(toggleBtn); dim(settingsBtn);
     toggleBtn.onclick = function () {
       var now = isEnabled();
       try { localStorage.setItem(SETTING_KEY, now ? '0' : '1'); } catch (e) { /* ignore */ }
-      if (now) {
-        // 关闭：把译文恢复为原文（从缓存反向？无法可靠还原，改为刷新页面文案提示）
-        toggleBtn.textContent = '🌐 译';
-        toggleBtn.style.background = 'rgba(120,120,120,.92)';
-      } else {
-        toggleBtn.textContent = '🌐 译';
-        toggleBtn.style.background = 'rgba(0,120,212,.92)';
-        scheduleScan();
-      }
+      toggleBtn.style.background = now ? 'rgba(120,120,120,.92)' : 'rgba(0,120,212,.92)';
+      if (!now) scheduleScan();
     };
+    settingsBtn.onclick = openSettings;
     if (!isEnabled()) toggleBtn.style.background = 'rgba(120,120,120,.92)';
-    document.body.appendChild(toggleBtn);
+    holder.appendChild(settingsBtn);
+    holder.appendChild(toggleBtn);
+    document.body.appendChild(holder);
   }
 
   // ==================== 启动 ====================
